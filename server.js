@@ -40,7 +40,7 @@ const validateObjectId = (paramName) => {
   };
 };
 
-
+// Add 'kompania' to the JWT token payload
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   const db = await connectDB();
@@ -50,10 +50,13 @@ app.post('/login', async (req, res) => {
     return res.json({ success: false, message: 'Invalid email or password' });
   }
 
-  const token = jwt.sign({ id: user._id, email: user.email }, SECRET_KEY, { expiresIn: '1h' });
+  const token = jwt.sign(
+    { id: user._id, email: user.email, kompania: user.kompania, permission: user.permission },
+    SECRET_KEY,
+    { expiresIn: '1h' }
+  );
   res.json({ success: true, token, user: { ...user, id: user._id } }); // Ensure id is included in the user object
 });
-
 
 app.post('/bypass-login', async (req, res) => {
   const { email } = req.body;
@@ -64,14 +67,22 @@ app.post('/bypass-login', async (req, res) => {
     return res.json({ success: false, message: 'Invalid email' });
   }
 
-  const token = jwt.sign({ id: user._id, email: user.email }, SECRET_KEY, { expiresIn: '1h' });
+  const token = jwt.sign(
+    { id: user._id, email: user.email, kompania: user.kompania, permission: user.permission },
+    SECRET_KEY,
+    { expiresIn: '1h' }
+  );
   res.json({ success: true, token, user });
 });
 
 // API endpoints for students
 app.get('/students', verifyJWT, async (req, res) => {
   const db = await connectDB();
-  const students = await db.collection('students').find().toArray();
+  let query = {};
+  if (req.user.permission !== 'SuperUser') {
+    query = { kompania: req.user.kompania };
+  }
+  const students = await db.collection('students').find(query).toArray();
   res.json(students);
 });
 
@@ -102,7 +113,6 @@ app.put('/students/:id', verifyJWT, validateObjectId('id'), async (req, res) => 
   }
 });
 
-
 app.delete('/users/:id', verifyJWT, validateObjectId('id'), async (req, res) => {
   const { id } = req.params;
   const db = await connectDB();
@@ -113,10 +123,8 @@ app.delete('/users/:id', verifyJWT, validateObjectId('id'), async (req, res) => 
   res.json({ id });
 });
 
-
-
 // Route to fetch meal plans for a specific student
-app.get('/mealPlans/:studentID', verifyJWT, validateObjectId, async (req, res) => {
+app.get('/mealPlans/:studentID', verifyJWT, validateObjectId('studentID'), async (req, res) => {
   const { studentID } = req.params;
   console.log(`Received request to fetch meal plans for studentID: ${studentID}`);
   const db = await connectDB();
@@ -162,10 +170,14 @@ app.post('/mealPlans', verifyJWT, async (req, res) => {
   }
 });
 
-
+// Ensure data is filtered by 'kompania' when fetching users
 app.get('/users', verifyJWT, async (req, res) => {
   const db = await connectDB();
-  const users = await db.collection('users').find().toArray();
+  let query = {};
+  if (req.user.permission !== 'SuperUser') {
+    query = { kompania: req.user.kompania };
+  }
+  const users = await db.collection('users').find(query).toArray();
   res.json(users);
 });
 
@@ -202,7 +214,6 @@ app.put('/users/:id', verifyJWT, validateObjectId('id'), async (req, res) => {
   }
 });
 
-
 app.delete('/students/:id', verifyJWT, validateObjectId('id'), async (req, res) => {
   const { id } = req.params;
   const db = await connectDB();
@@ -213,12 +224,12 @@ app.delete('/students/:id', verifyJWT, validateObjectId('id'), async (req, res) 
   res.json({ id });
 });
 
+// Ensure data is filtered by 'kompania' when fetching meal plans
 app.get('/mealPlans', verifyJWT, async (req, res) => {
-  const kompania = req.query.kompania;
   const db = await connectDB();
   let query = {};
-  if (kompania !== 'Wszystkie' && kompania) {
-    query = { 'students.kompania': kompania };
+  if (req.user.permission !== 'SuperUser') {
+    query = { 'studentDetails.kompania': req.user.kompania };
   }
   const mealPlans = await db.collection('mealPlans').aggregate([
     {
